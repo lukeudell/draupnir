@@ -1,0 +1,381 @@
+# ============================================================
+#  file:       dbt/models/marts/schema.yml
+#  purpose:    mart contracts, descriptions and declarative tests
+#  owner:      Luke Udell
+#  spdx:       MIT
+#  std:        [STD-04] [STD-14]
+#  adr:        none
+#  ticket:     none
+#  ticket-url: none
+#  created:    2026-07-19
+# ============================================================
+version: 2
+
+models:
+  - name: dim_advertisers
+    description: "Advertiser dimension. One row per advertiser."
+    columns:
+      - name: advertiser_key
+        description: "Surrogate key"
+        data_type: text
+        tests: [not_null, unique]
+      - name: advertiser_id
+        data_type: varchar(20)
+        tests: [not_null, unique]
+      - name: company_name
+        data_type: varchar(200)
+        tests: [not_null]
+      - name: industry_vertical
+        data_type: varchar(50)
+        tests: [not_null]
+      - name: spend_tier
+        data_type: varchar(20)
+        tests: [not_null]
+      - name: country
+        data_type: varchar(10)
+        tests: [not_null]
+
+  - name: dim_content
+    description: "Content dimension. One row per title."
+    columns:
+      - name: content_key
+        data_type: text
+        tests: [not_null, unique]
+      - name: content_id
+        data_type: varchar(20)
+        tests: [not_null, unique]
+      - name: title
+        data_type: varchar(500)
+        tests: [not_null]
+      - name: content_type
+        data_type: varchar(20)
+        tests: [not_null]
+      - name: genre
+        data_type: varchar(50)
+        tests: [not_null]
+      - name: avg_episode_minutes
+        data_type: smallint
+        tests: [not_null]
+      - name: maturity_rating
+        data_type: varchar(10)
+        tests: [not_null]
+
+  - name: dim_subscribers
+    description: "Subscriber dimension. One row per subscriber."
+    columns:
+      - name: subscriber_key
+        data_type: text
+        tests: [not_null, unique]
+      - name: subscriber_id
+        data_type: varchar(20)
+        tests: [not_null, unique]
+      - name: subscription_tier
+        data_type: varchar(20)
+        tests: [not_null]
+      - name: signup_date
+        data_type: date
+        tests: [not_null]
+      - name: region
+        data_type: varchar(20)
+        tests: [not_null]
+      - name: device_primary
+        data_type: varchar(20)
+        tests: [not_null]
+      - name: age_band
+        data_type: varchar(10)
+        tests: [not_null]
+
+  - name: dim_campaigns
+    description: "Campaign dimension with advertiser FK. One row per campaign."
+    columns:
+      - name: campaign_key
+        data_type: text
+        tests: [not_null, unique]
+      - name: campaign_id
+        data_type: varchar(20)
+        tests: [not_null, unique]
+      - name: advertiser_key
+        description: "FK to dim_advertisers"
+        data_type: text
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_advertisers')
+              field: advertiser_key
+      - name: campaign_name
+        data_type: varchar(500)
+        tests: [not_null]
+      - name: objective
+        data_type: varchar(20)
+        tests: [not_null]
+      - name: daily_budget_usd
+        data_type: numeric(12,2)
+        tests: [not_null]
+      - name: total_budget_usd
+        data_type: numeric(12,2)
+        tests: [not_null]
+      - name: flight_start
+        data_type: date
+        tests: [not_null]
+      - name: flight_end
+        data_type: date
+        tests: [not_null]
+      - name: flight_days
+        data_type: smallint
+        tests: [not_null]
+      - name: frequency_cap
+        data_type: smallint
+        tests: [not_null]
+      - name: pacing_goal
+        data_type: varchar(20)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["even", "front_loaded", "back_loaded"]
+      - name: status
+        data_type: varchar(20)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["completed", "active", "scheduled"]
+
+  - name: dim_ad_slots
+    description: "Ad slot dimension. One row per slot position."
+    columns:
+      - name: slot_key
+        data_type: text
+        tests: [not_null, unique]
+      - name: slot_position
+        data_type: varchar(20)
+        tests: [not_null, unique]
+      - name: typical_duration_sec
+        data_type: smallint
+        tests: [not_null]
+      - name: avg_completion_rate
+        data_type: numeric(5,2)
+        tests: [not_null]
+      - name: avg_viewability
+        data_type: numeric(5,2)
+        tests: [not_null]
+
+  - name: dim_date_ads
+    description: "Date dimension for the ads data window."
+    columns:
+      - name: date_key
+        data_type: integer
+        tests: [not_null, unique]
+      - name: full_date
+        data_type: date
+        tests: [not_null]
+      - name: day_of_week
+        data_type: varchar(10)
+        tests: [not_null]
+      - name: is_weekend
+        data_type: boolean
+        tests: [not_null]
+      - name: week_of_year
+        data_type: smallint
+        tests: [not_null]
+      - name: month_name
+        data_type: varchar(10)
+        tests: [not_null]
+      - name: quarter
+        data_type: varchar(5)
+        tests: [not_null]
+      - name: year
+        data_type: smallint
+        tests: [not_null]
+
+  - name: fct_ad_impressions
+    description: "Core fact table. One row per served ad impression."
+    columns:
+      - name: impression_id
+        data_type: varchar(20)
+        tests: [not_null, unique]
+      - name: request_id
+        data_type: varchar(20)
+        tests: [not_null]
+      - name: campaign_key
+        data_type: text
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_campaigns')
+              field: campaign_key
+      - name: advertiser_key
+        data_type: text
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_advertisers')
+              field: advertiser_key
+      - name: subscriber_key
+        data_type: text
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_subscribers')
+              field: subscriber_key
+      - name: content_key
+        data_type: text
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_content')
+              field: content_key
+      - name: slot_key
+        data_type: text
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_ad_slots')
+              field: slot_key
+      - name: date_key
+        data_type: integer
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date_ads')
+              field: date_key
+      - name: bid_price_usd
+        data_type: numeric(12,6)
+        tests: [not_null]
+      - name: revenue_usd
+        data_type: numeric(12,6)
+        tests: [not_null]
+      - name: is_viewable
+        data_type: boolean
+        tests: [not_null]
+      - name: completed
+        data_type: boolean
+        tests: [not_null]
+      - name: view_duration_sec
+        data_type: smallint
+        tests: [not_null]
+      - name: device
+        data_type: varchar(20)
+        tests: [not_null]
+      - name: impression_timestamp
+        data_type: timestamp
+        tests: [not_null]
+
+  - name: fct_campaign_daily
+    description: "Aggregated fact: one row per campaign per day with pacing metrics."
+    columns:
+      - name: campaign_key
+        data_type: text
+        tests: [not_null]
+      - name: date_key
+        data_type: integer
+        tests: [not_null]
+      - name: impressions_served
+        data_type: bigint
+        tests: [not_null]
+      - name: impressions_viewable
+        data_type: bigint
+        tests: [not_null]
+      - name: impressions_completed
+        data_type: bigint
+        tests: [not_null]
+      - name: revenue_usd
+        data_type: numeric
+        tests: [not_null]
+      - name: unique_subscribers
+        data_type: bigint
+        tests: [not_null]
+      - name: total_budget_usd
+        data_type: numeric(12,2)
+        tests: [not_null]
+      - name: cumulative_spend
+        data_type: numeric
+        tests: [not_null]
+      - name: elapsed_days
+        description: >
+          Calendar days since flight_start, inclusive. Not a count of days with
+          delivery: a campaign with gaps must not appear to have used less of
+          its flight than it has.
+        data_type: integer
+        tests: [not_null]
+      - name: flight_days
+        data_type: smallint
+        tests: [not_null]
+      - name: budget_pacing_ratio
+        description: >
+          Budget delivery: cumulative spend over the pro-rata share of the
+          budget the elapsed flight has earned. 1.0 is exactly on pace, below
+          0.9 is under-delivering against contract, above 1.1 is over-pacing.
+          Null when there is no budget or no flight length to divide by, which
+          is why it is bounded rather than not_null.
+        data_type: numeric
+      - name: pacing_status
+        description: >
+          Classification of budget_pacing_ratio against the published 0.9 to 1.1
+          band. UNKNOWN when the ratio is null; a missing baseline is not the
+          same as being on pace.
+        data_type: text
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["ON_PACE", "UNDER_PACING", "OVER_PACING", "UNKNOWN"]
+
+  - name: fct_viewing_sessions
+    description: >
+      Viewing sessions: one subscriber's sitting with one title. Exists to give
+      revenue per subscriber hour a real denominator of content viewing time,
+      which is a different quantity from the ad watch time on the impression
+      grain.
+    columns:
+      - name: session_id
+        data_type: varchar(20)
+        tests: [not_null, unique]
+      - name: subscriber_key
+        data_type: text
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_subscribers')
+              field: subscriber_key
+      - name: content_key
+        data_type: text
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_content')
+              field: content_key
+      - name: date_key
+        data_type: integer
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date_ads')
+              field: date_key
+      - name: watch_seconds
+        description: "Content viewing time. The RPSH denominator."
+        data_type: integer
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 30
+              inclusive: true
+      - name: deepest_slot
+        description: "Furthest ad break reached; the evidence for watch duration"
+        data_type: varchar(20)
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_ad_slots')
+              field: slot_position
+      - name: ad_requests
+        data_type: smallint
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+              max_value: 6
+              inclusive: true
+      - name: device
+        data_type: varchar(20)
+        tests: [not_null]
+      - name: session_start
+        data_type: timestamp
+        tests: [not_null]
