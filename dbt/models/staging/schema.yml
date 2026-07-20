@@ -1,0 +1,236 @@
+version: 2
+
+sources:
+  - name: ads_staging
+    schema: ads_staging
+    description: "Raw staging tables for the Ad Platform Simulator project"
+    tables:
+      - name: advertisers
+        description: "Raw advertiser accounts"
+      - name: content_catalog
+        description: "Raw content catalog (shows, movies, specials)"
+      - name: subscribers
+        description: "Raw subscriber accounts with subscription tier"
+      - name: campaigns
+        description: "Raw advertising campaigns with budgets and flight dates"
+      - name: ad_slots
+        description: "Reference: ad break positions and baseline rates"
+      - name: ad_requests
+        description: "Raw ad impression opportunity requests"
+      - name: ad_impressions
+        description: "Raw served ad impressions with revenue and engagement"
+      - name: dates_ads
+        description: "Date dimension covering the ads data window"
+      - name: viewing_sessions
+        description: "Raw viewing sessions: one subscriber's sitting with one title"
+
+models:
+  - name: stg_advertisers
+    description: "Staged advertiser accounts. One row per advertiser."
+    columns:
+      - name: advertiser_id
+        description: "Unique advertiser identifier"
+        tests: [not_null, unique]
+      - name: company_name
+        tests: [not_null]
+      - name: industry_vertical
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["Automotive", "CPG", "Entertainment", "Finance", "Healthcare", "Retail", "Technology", "Telecom", "Travel", "QSR"]
+      - name: spend_tier
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["Enterprise", "Growth", "Starter", "Self-Serve"]
+      - name: country
+        tests: [not_null]
+
+  - name: stg_content_catalog
+    description: "Staged content catalog. One row per title."
+    columns:
+      - name: content_id
+        tests: [not_null, unique]
+      - name: title
+        tests: [not_null]
+      - name: content_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["series", "movie", "special"]
+      - name: genre
+        tests: [not_null]
+      - name: avg_episode_minutes
+        tests: [not_null]
+      - name: maturity_rating
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["TV-G", "TV-PG", "TV-14", "TV-MA"]
+
+  - name: stg_subscribers
+    description: "Staged subscriber accounts. One row per subscriber."
+    columns:
+      - name: subscriber_id
+        tests: [not_null, unique]
+      - name: subscription_tier
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["ads_basic", "ads_standard", "premium_no_ads"]
+      - name: signup_date
+        tests: [not_null]
+      - name: region
+        tests: [not_null]
+      - name: device_primary
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["smart_tv", "mobile", "tablet", "web", "game_console"]
+      - name: age_band
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["18_24", "25_34", "35_44", "45_54", "55_64", "65_plus"]
+
+  - name: stg_campaigns
+    description: "Staged advertising campaigns. One row per campaign."
+    columns:
+      - name: campaign_id
+        tests: [not_null, unique]
+      - name: advertiser_id
+        tests: [not_null]
+      - name: campaign_name
+        tests: [not_null]
+      - name: objective
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["awareness", "reach", "completion", "clicks"]
+      - name: daily_budget_usd
+        tests: [not_null]
+      - name: total_budget_usd
+        tests: [not_null]
+      - name: flight_start
+        tests: [not_null]
+      - name: flight_end
+        tests: [not_null]
+      - name: flight_days
+        tests: [not_null]
+      - name: frequency_cap
+        tests: [not_null]
+      - name: pacing_goal
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["even", "front_loaded", "back_loaded"]
+      - name: status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["completed", "active", "scheduled"]
+
+  - name: stg_ad_slots
+    description: "Staged ad slot reference data. One row per slot position."
+    columns:
+      - name: slot_position
+        tests: [not_null, unique]
+      - name: typical_duration_sec
+        tests: [not_null]
+      - name: avg_completion_rate
+        tests: [not_null]
+      - name: avg_viewability
+        tests: [not_null]
+
+  - name: stg_ad_requests
+    description: "Staged ad requests. One row per impression opportunity."
+    columns:
+      - name: request_id
+        tests: [not_null, unique]
+      - name: session_id
+        description: "The viewing session this ad break belongs to"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_viewing_sessions')
+              field: session_id
+      - name: subscriber_id
+        tests: [not_null]
+      - name: content_id
+        tests: [not_null]
+      - name: slot_position
+        tests: [not_null]
+      - name: request_timestamp
+        tests: [not_null]
+      - name: device
+        tests: [not_null]
+      - name: was_filled
+        tests: [not_null]
+
+  - name: stg_ad_impressions
+    description: "Staged served ad impressions. One row per delivered ad."
+    columns:
+      - name: impression_id
+        tests: [not_null, unique]
+      - name: request_id
+        tests: [not_null]
+      - name: campaign_id
+        tests: [not_null]
+      - name: advertiser_id
+        tests: [not_null]
+      - name: subscriber_id
+        tests: [not_null]
+      - name: content_id
+        tests: [not_null]
+      - name: slot_position
+        tests: [not_null]
+      - name: device
+        tests: [not_null]
+      - name: bid_price_usd
+        tests: [not_null]
+      - name: revenue_usd
+        tests: [not_null]
+      - name: is_viewable
+        tests: [not_null]
+      - name: completed
+        tests: [not_null]
+      - name: view_duration_sec
+        tests: [not_null]
+      - name: impression_timestamp
+        tests: [not_null]
+
+  - name: stg_viewing_sessions
+    description: "Staged viewing sessions. One row per session."
+    columns:
+      - name: session_id
+        description: "Unique session identifier"
+        tests: [not_null, unique]
+      - name: subscriber_id
+        tests: [not_null]
+      - name: content_id
+        tests: [not_null]
+      - name: session_start
+        tests: [not_null]
+      - name: device
+        tests: [not_null]
+      - name: watch_seconds
+        description: "Content viewing time, the RPSH denominator. Not ad watch time."
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 30
+              inclusive: true
+      - name: deepest_slot
+        description: "Furthest ad break the session reached; encodes how much was watched"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["pre_roll_1", "pre_roll_2", "mid_roll_1", "mid_roll_2", "mid_roll_3", "post_roll_1"]
+      - name: ad_requests
+        description: "Ad breaks this session passed through"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+              max_value: 6
+              inclusive: true

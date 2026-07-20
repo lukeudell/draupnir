@@ -1,0 +1,4 @@
+# dbt Core: pinned dependencies
+# Update policy: check monthly for CVEs, pin exact versions always.
+dbt-core==1.9.4
+dbt-postgres==1.9.1

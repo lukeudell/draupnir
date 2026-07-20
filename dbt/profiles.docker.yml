@@ -1,0 +1,14 @@
+# dbt profiles for Docker: credentials come from environment variables.
+# No secrets in this file; safe to commit. Local runs use profiles.yml (gitignored).
+draupnir:
+  target: prod
+  outputs:
+    prod:
+      type: postgres
+      host: "{{ env_var('DBT_HOST', 'db') }}"
+      port: "{{ env_var('DBT_PORT', '5432') | int }}"
+      user: "{{ env_var('DBT_USER') }}"
+      password: "{{ env_var('DBT_PASSWORD') }}"
+      dbname: "{{ env_var('DBT_DBNAME') }}"
+      schema: public
+      threads: 4

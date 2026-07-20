@@ -1,0 +1,27 @@
+# SQL style gate for [STD-13]: lowercase keywords, leading commas, explicit
+# columns. The dbt templater compiles jinja (ref/source/dbt_utils) before
+# linting, so macros never confuse the parser.
+[sqlfluff]
+dialect = postgres
+templater = dbt
+max_line_length = 100
+# LT08 demands a blank line after every CTE closing bracket; [STD-13] says the
+# opposite (no blank lines between CTEs, so cursor-based execution can target
+# exactly one). The standard wins.
+exclude_rules = LT08
+
+[sqlfluff:templater:dbt]
+project_dir = .
+profiles_dir = .
+
+[sqlfluff:layout:type:comma]
+line_position = leading
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.functions]
+extended_capitalisation_policy = lower

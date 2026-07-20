@@ -1,0 +1,40 @@
+# ============================================================
+#  file:       dbt/dbt_project.yml
+#  purpose:    dbt project config: three layers, their schemas and materialisations
+#  owner:      Luke Udell
+#  spdx:       MIT
+#  std:        [STD-04]
+#  adr:        none
+#  ticket:     none
+#  ticket-url: none
+#  created:    2026-07-19
+# ============================================================
+name: 'draupnir'
+version: '0.1.0'
+config-version: 2
+
+profile: 'draupnir'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  draupnir:
+    staging:
+      +materialized: view
+      +schema: ads_staging_v
+    marts:
+      +materialized: table
+      +schema: ads_mart
+      +contract: {enforced: true}
+    analytics:
+      +materialized: table
+      +schema: ads_analytics

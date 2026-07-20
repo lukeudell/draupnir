@@ -1,0 +1,14 @@
+# Copy to profiles.yml for local (non-Docker) dbt runs. profiles.yml is gitignored.
+# Never commit real credentials: use SOPS + AGE for anything deployed.
+draupnir:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: 127.0.0.1
+      port: 5432
+      user: draupnir_admin
+      password: CHANGE_ME_local_only
+      dbname: draupnir
+      schema: public
+      threads: 4
