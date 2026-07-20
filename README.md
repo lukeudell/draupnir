@@ -31,6 +31,12 @@ docker compose --profile seed up   # generate, load, dbt build
 docker compose up -d app           # http://localhost:8503
 ```
 
+That `.env` is for local development. Deployed, there is no `.env`: the two
+credentials are decrypted on the operator's workstation and injected as
+environment variables, and the app reads them from the process environment
+without knowing how they got there. Both published ports bind loopback, so a
+reverse proxy is the only public listener. See `SECURITY.md`.
+
 Grants run after dbt, not before: dbt creates the schemas, and granting on a
 schema that does not exist yet is a silent no-op. `data/grant_reader_access.py`
 is a separate step for that reason.

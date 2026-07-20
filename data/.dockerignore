@@ -1,0 +1,14 @@
+# SECURITY: the image is built with `COPY . .`. Anything not excluded here is
+# baked in permanently, and a later layer cannot remove it.
+
+# Never in a build context
+.env
+.env.*
+
+# Generated CSVs: written at runtime, and shipping a dataset inside the image
+# makes it large and stale at the same time.
+generated/
+
+tests/
+__pycache__/
+*.py[cod]

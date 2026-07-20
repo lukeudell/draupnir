@@ -1,0 +1,20 @@
+# SECURITY: the image is built with `COPY . .`, so anything here that is not
+# excluded is baked in permanently. A later RUN that overwrites a file does not
+# help: the earlier layer keeps the original, and `docker save` recovers it.
+# profiles.yml is the one that matters. It is gitignored precisely because it
+# holds a plaintext password for local runs, and without this line that password
+# ships inside every built image.
+profiles.yml
+
+# Build artefacts and installed packages: rebuilt in the image, never copied in.
+target/
+logs/
+dbt_packages/
+.sqlfluffignore
+
+# Never in a build context
+.env
+.env.*
+*.log
+__pycache__/
+*.py[cod]

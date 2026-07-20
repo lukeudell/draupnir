@@ -1,5 +1,8 @@
-# secrets: never commit
+# secrets: never commit. `.env.*` matters as much as `.env`: a stray
+# .env.production or .env.local is the same secret in a different filename, and
+# `*.env` alone does not match either of them.
 .env
+.env.*
 *.env
 !.env.example
 dbt/profiles.yml

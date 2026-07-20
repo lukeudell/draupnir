@@ -30,6 +30,63 @@ this role does not have.
 Migrations, loading and dbt run as the owner role, which is a separate
 credential the app never receives.
 
+## Secrets: the deploy contract
+
+Secrets are delivered as environment variables and nothing else. This repo holds
+no secret, no encrypted secrets file, and no key: encryption and decryption are
+the operator's concern, on the operator's workstation. The app never learns that
+SOPS exists.
+
+```bash
+sops exec-env <secrets-file> 'docker compose up -d'
+```
+
+There is deliberately no `sops`, no `age`, no key file and no decryption step in
+this repo, in any image, in CI, or on the server.
+
+**Secret. Two credentials, and only these:**
+
+| Variable | What it is | Class |
+|---|---|---|
+| `DB_PASSWORD` | Postgres owner password. Runs migrations, the loader and dbt | service credential |
+| `READER_DB_PASSWORD` | Password for the SELECT-only role the app connects as | service credential |
+
+Both are service credentials: regenerable, no data loss if rotated, swap the
+value and redeploy. **This project holds no data-encrypting key.** It encrypts
+nothing at rest, so there is nothing here that is irreplaceable if lost, and
+nothing that needs a vault entry alongside its secrets file.
+
+Generate them URL-safe, because they end up in connection strings:
+`openssl rand -hex 32`.
+
+**Not secret. Configuration, safe in plain sight:**
+
+`DB_USER`, `DB_NAME`, `READER_DB_USER`, `POSTGRES_EXPOSE_PORT`,
+`APP_EXPOSE_PORT`, `APP_BASE_PATH`.
+
+**Derived inside compose,** never set by the operator: the containers read
+`PORTFOLIO_DB_*` and dbt reads `DBT_*`. Compose maps the two credentials above
+onto them, which is why the app never sees the owner password: it is given
+`READER_DB_PASSWORD` and nothing more.
+
+**How the rules are kept:**
+
+- Nothing starts unconfigured. Compose uses `${DB_PASSWORD:?...}`, and the app
+  refuses to start on a missing credential with a configuration error that is
+  explicitly distinct from the offline state, so a deploy that was never
+  configured cannot masquerade as a database outage.
+- No secret has a working default anywhere.
+- No secret is logged. Failures surface as an exception type, never a value.
+- No secret is baked into an image. Each build context has a `.dockerignore`
+  excluding `.env*`, `dbt/profiles.yml` and `.streamlit/secrets.toml`. That last
+  pair matters: both are gitignored *because* they hold plaintext credentials
+  for local use, and `COPY . .` would otherwise put them in a layer. A later
+  `RUN` that overwrites the file does not undo this, because the earlier layer
+  keeps the original and `docker save` recovers it. Verified by building with a
+  marker credential in place and searching every layer blob for it.
+- CI holds nothing sensitive: its Postgres password is invented in-job and
+  named `ci_only_not_a_secret`.
+
 ## Dependency baseline
 
 Audited 2026-07-19 with `pip-audit`. Every `requirements.txt` here carries the

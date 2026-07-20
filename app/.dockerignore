@@ -1,0 +1,16 @@
+# SECURITY: the image is built with `COPY . .`. Anything not excluded here is
+# baked in permanently, and a later layer cannot remove it.
+# .streamlit/secrets.toml is the trap: Streamlit's own convention puts a
+# plaintext credential at exactly that path. This app reads its configuration
+# from the environment and never calls st.secrets, so the file should not exist,
+# but excluding it means an operator who creates one cannot publish it by
+# accident.
+.streamlit/secrets.toml
+
+# Never in a build context
+.env
+.env.*
+tests/
+__pycache__/
+*.py[cod]
+.pytest_cache/

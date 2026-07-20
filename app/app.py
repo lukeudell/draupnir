@@ -16,6 +16,7 @@ Self-hosted Streamlit application with vaporwave aesthetic.
 """
 
 import html
+import os
 
 import plotly.graph_objects as go
 import streamlit as st
@@ -29,6 +30,25 @@ st.set_page_config(
     page_icon="📊",
     layout="wide",
 )
+
+# SECURITY: fail fast on missing configuration, and keep that distinct from the
+# database being unreachable. They look the same on screen otherwise, and they
+# are not the same problem: a warehouse outage is a runtime condition the offline
+# state exists to handle, while an absent credential is a deployment that was
+# never configured. Reporting the second as the first hides a broken deploy
+# behind a message that says everything is fine apart from the database.
+#
+# Names only, never values, and no default: a secret that falls back to empty or
+# a placeholder turns a configuration mistake into a security incident.
+_REQUIRED_ENV = ("PORTFOLIO_DB_PASSWORD",)
+_missing = [name for name in _REQUIRED_ENV if not os.getenv(name)]
+if _missing:
+    st.error(
+        "Configuration error: " + ", ".join(_missing) + " is not set. "
+        "This app reads every credential from the environment; the operator "
+        "injects them at deploy. It is not a database outage."
+    )
+    st.stop()
 
 # Theme colors are resolved from the iframe URL query string. The parent site
 # forwards the active palette so the demo matches whatever scheme is active.
