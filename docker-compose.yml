@@ -1,0 +1,110 @@
+# ============================================================
+#  file:       docker-compose.yml
+#  purpose:    local stack: postgres, the seed profile, and the streamlit app
+#  owner:      Luke Udell
+#  spdx:       MIT
+#  std:        [STD-01]
+#  adr:        none
+#  ticket:     none
+#  ticket-url: none
+#  created:    2026-07-19
+# ============================================================
+# Split out of a shared monorepo, 2026-07-19. Self-contained: this project owns
+# its Postgres, so it runs without any sibling project present.
+#
+#   docker compose up -d db          # start Postgres
+#   docker compose --profile seed up # generate + load + dbt build
+#   docker compose up -d app         # the Streamlit app on :8503
+# =============================================================================
+services:
+
+  db:
+    image: postgres:16
+    container_name: draupnir_db
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_EXPOSE_PORT:-127.0.0.1:55434}:5432"
+    environment:
+      POSTGRES_USER: ${DB_USER:-draupnir_admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      POSTGRES_DB: ${DB_NAME:-draupnir}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-draupnir_admin} -d ${DB_NAME:-draupnir}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+
+  app:
+    build: ./app
+    container_name: draupnir_app
+    restart: unless-stopped
+    ports:
+      - "8503:8503"
+    environment:
+      PORTFOLIO_DB_HOST: db
+      PORTFOLIO_DB_PORT: 5432
+      PORTFOLIO_DB_USER: ${READER_DB_USER:-portfolio_reader}
+      PORTFOLIO_DB_PASSWORD: ${READER_DB_PASSWORD:?set READER_DB_PASSWORD in .env}
+      PORTFOLIO_DB_NAME: ${DB_NAME:-draupnir}
+      # empty = served at /. Set to a path segment when behind a reverse proxy.
+      STREAMLIT_SERVER_BASE_URL_PATH: ${APP_BASE_PATH:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+
+  # one-shot: generate synthetic data and load it. `--profile seed`
+  seed:
+    build: ./data
+    container_name: draupnir_seed
+    profiles: [seed]
+    environment:
+      PORTFOLIO_DB_HOST: db
+      PORTFOLIO_DB_PORT: 5432
+      PORTFOLIO_DB_USER: ${DB_USER:-draupnir_admin}
+      PORTFOLIO_DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      PORTFOLIO_DB_NAME: ${DB_NAME:-draupnir}
+      READER_DB_PASSWORD: ${READER_DB_PASSWORD:?set READER_DB_PASSWORD in .env}
+    # why: the image bakes the source in with COPY, so without this mount an
+    # edited generator is ignored and the seed silently reruns the version that
+    # was current at the last `docker compose build`. That failure is invisible:
+    # row counts and totals look identical, so a stale run reads as a clean one.
+    volumes:
+      - ./data:/app
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+
+  # one-shot: dbt build. `--profile seed`
+  dbt:
+    build: ./dbt
+    container_name: draupnir_dbt
+    profiles: [seed]
+    # why: same trap as the seed service. Mounted per subpath rather than over
+    # /app, because dbt_packages is installed into /app at build time and a
+    # whole-directory mount would hide it.
+    volumes:
+      - ./dbt/models:/app/models
+      - ./dbt/tests:/app/tests
+      - ./dbt/dbt_project.yml:/app/dbt_project.yml:ro
+      - ./dbt/packages.yml:/app/packages.yml:ro
+    environment:
+      DBT_HOST: db
+      DBT_PORT: 5432
+      DBT_USER: ${DB_USER:-draupnir_admin}
+      DBT_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      DBT_DBNAME: ${DB_NAME:-draupnir}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+
+volumes:
+  pgdata:
+
+networks:
+  internal:
