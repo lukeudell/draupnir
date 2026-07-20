@@ -1,0 +1,8 @@
+# Data generation and loading: pinned dependencies
+# Update policy: check monthly for CVEs, pin exact versions always.
+psycopg2-binary==2.9.10
+pandas==2.2.3
+numpy==2.2.3
+faker==37.1.0
+scipy==1.15.2
+python-dotenv==1.2.2
