@@ -1,0 +1,126 @@
+# project.yaml for draupnir (Ad Platform)
+# Portfolio site configuration. Written from docs/CASE_STUDY.md, which is the
+# source of truth for the narrative. Every figure here is reproducible from a
+# cold clone at seed 42.
+contract_version: "1.1"
+slug: ad-platform
+title: Ad Platform
+summary: Metrics design for an ad-supported streaming service, from zero to a working analytics layer.
+# repo_url: https://github.com/lukeudell/draupnir
+#   ^ commented out deliberately: this repo is not pushed yet, so the link would
+#     404. Uncomment once it exists. A dead 'git clone' button is exactly the kind
+#     of unbacked claim the rest of this file was rewritten to avoid.
+published: false
+tags: [dbt, postgres, python, streamlit]
+
+sections:
+  - slug: overview
+    title: Overview
+    published: true
+    body: |
+      You are the founding analytics engineer at a new ad-supported streaming
+      service. There is no warehouse, no metrics layer, and no agreed definition of
+      anything. Stakeholders arrive with questions rather than requirements: is our
+      inventory worth what we think it is? Are we annoying viewers? What happens if
+      our biggest advertiser leaves?
+
+      The work is deciding what to measure, defining it precisely enough to compute,
+      and building the pipeline that computes it. This project is that pipeline:
+      synthetic ad-supported streaming telemetry, generated with domain-appropriate
+      distributions, loaded into Postgres, modelled with dbt across three layers,
+      and read by a campaign pacing monitor.
+
+      About 141,000 viewing sessions producing 500,000 ad requests and 410,000
+      impressions, across 50,000 subscribers, 100 advertisers, 500 campaigns and
+      2,000 content items, under seed 42. Sessions are the unit of simulation:
+      how far one gets decides both its watch time and the ad breaks it passes,
+      so ad load is a consequence of viewing rather than a separate dial.
+
+  - slug: metrics
+    title: The Metrics
+    published: true
+    body: |
+      Eight metrics, each chosen because a stakeholder asks the question it answers.
+
+      | Metric | Formula | The question |
+      |---|---|---|
+      | Fill rate | impressions / requests | Are we monetising the inventory we have? |
+      | eCPM | revenue / impressions x 1000 | What is our inventory worth? |
+      | Completion rate | completed / started | Are viewers actually watching? |
+      | Viewability | viewable / total, IAB standard | Can advertisers trust it? |
+      | RPSH | ad revenue / viewing hours | Are we monetising without driving people away? |
+      | Budget pacing | spend to date / pro-rata budget | Will the advertiser get what they paid for? |
+      | Frequency compliance | subscribers over cap / reached | Are we annoying people? |
+      | Concentration (HHI) | sum of squared percent shares | What if our biggest advertiser leaves? |
+
+      Ad inventory is the most perishable asset in media: an unfilled slot at 8pm is
+      revenue that cannot be recovered later. That is why fill rate leads.
+
+      HHI is borrowed directly from antitrust: it is the same index the DOJ
+      applies to merger review. Below 1500 is diversified, above 2500 is
+      concentrated. If one advertiser is 40 percent of revenue, losing that account
+      is not a bad quarter, it is an existential event.
+
+      Two of these were the hard ones, and building them properly changed the
+      catalog rather than just adding to it.
+
+      Revenue per subscriber hour is the metric that sits on the boundary between
+      monetisation and user experience: it rises both when inventory sells well
+      and when viewers are shown more advertising than they will tolerate.
+      Computing it needed content viewing time, which did not exist in the model:
+      the impression grain carries ad duration, which is a different quantity.
+      Adding viewing sessions also showed the published thresholds could not be
+      met. RPSH is ad load per hour times eCPM over 1000, so a 4 dollar per hour
+      target at a 25 dollar eCPM needs an ad every 22 seconds of viewing. The
+      thresholds are now derived from that arithmetic instead of asserted.
+
+      Budget pacing had shipped a different formula from the published one,
+      comparing a day's revenue against the campaign's own average rather than
+      spend against elapsed flight. Because the baseline moved with the spend, it
+      could never show a campaign systematically under-delivering. Implementing
+      the published definition immediately exposed two upstream data bugs that
+      the wrong metric had been hiding.
+
+  - slug: interactions
+    title: Reading Metrics Against Each Other
+    published: true
+    body: |
+      Listing metrics is the easy half. Reading them together is the analytics
+      engineering.
+
+      | Pattern | Diagnosis |
+      |---|---|
+      | High fill rate + low eCPM | Selling cheap. Floors are too low or demand quality is poor; revenue left on the table at full utilisation |
+      | Low completion + high frequency | Ad fatigue. Churn risk is elevated before any revenue metric moves |
+      | High revenue per hour + falling viewability | Short-term revenue extracted at the cost of ad quality. Advertisers will demand make-goods or leave |
+      | High concentration + over-pacing top campaigns | Concentrated revenue burning too fast. When those budgets exhaust, fill rate and revenue cliff together |
+
+      Each is a leading indicator no single metric produces. The last one is why
+      pacing and concentration belong on the same dashboard: neither is alarming
+      alone.
+
+  - slug: pipeline
+    title: The Pipeline
+    published: true
+    body: |
+      Four stages: generate, load, transform, analyse.
+
+      Generation uses distributions chosen for a reason. Ten advertiser verticals
+      with weighted CPMs from 18 dollars for quick-service restaurants to 40 for
+      finance. Six ad slots with completion falling from 92 percent pre-roll to 55
+      percent post-roll, and viewability falling with it. Log-normal bid prices with
+      a second-price discount. A Gaussian diurnal curve peaking at 20:30, weekends
+      1.2 times heavier. Uniform random data would make every campaign look average.
+
+      Transformation is 23 dbt models across three schemas: 8 staging views, 9
+      mart tables (6 dimensions and 3 facts, with surrogate keys), and 6 analytics
+      tables. The marts carry enforced contracts, so a model that changes shape
+      fails the build rather than quietly changing meaning. 303 data tests cover
+      uniqueness on every surrogate key, not-null and bounds on every derived
+      metric, and referential integrity from fact to dimension. Eight of them are
+      reconciliation tests that recompute a published metric a second way and
+      assert the two agree.
+
+      The presentation layer reads through a SELECT-only role. Postgres binds to
+      loopback. No credentials are hardcoded, and the app refuses to start without
+      its password in the environment.
