@@ -15,5 +15,11 @@ font = "monospace"
 # standalone, or under a prefix when it sits behind a reverse proxy. Hardcoding it
 # made the app only work in one deployment.
 headless = true
-enableCORS = false
+
+# SECURITY: XSRF protection on, and CORS left at its default of enabled.
+# Setting enableCORS = false here would be worse than useless: Streamlit refuses
+# the combination, overrides CORS back to true, and prints a warning on every
+# boot, so the config would claim a posture the server does not have. Cross
+# origin access for an embed is a reverse-proxy concern, not an app one; serve
+# the iframe from the same origin as the host page and neither has to be relaxed.
 enableXsrfProtection = true

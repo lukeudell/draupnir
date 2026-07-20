@@ -15,6 +15,8 @@ Interactive ad platform health dashboard and campaign pacing tool.
 Self-hosted Streamlit application with vaporwave aesthetic.
 """
 
+import html
+
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -78,9 +80,12 @@ def offline_notice(what: str) -> None:
 # ---------------------------------------------------------------------------
 # SECURITY: unsafe_allow_html=True is used below for CSS theming and styled
 # metric cards. The CSS is built by theme.build_app_css() from query-param-derived
-# colors that are validated against a strict ``#RRGGBB`` allowlist; no raw user
-# input reaches this string. Metric-card HTML elsewhere uses hardcoded templates
-# with formatted numeric values only. See SECURITY.md.
+# colors validated against a strict ``#RRGGBB`` allowlist, so no raw user input
+# reaches it. Metric-card HTML uses hardcoded templates interpolating only
+# formatted numbers, those validated colors, and strings passed through
+# html.escape(). Nothing from the database is rendered raw: the label vocabularies
+# are enforced in SQL today, but an app that is safe only because of an upstream
+# invariant it does not check is one schema change from stored XSS. See SECURITY.md.
 
 st.markdown(build_app_css(COLORS), unsafe_allow_html=True)
 
@@ -166,8 +171,13 @@ with tab2:
     else:
 
         campaigns = perf[["campaign_key", "campaign_name", "company_name"]].drop_duplicates()
-        selected = st.selectbox("Select Campaign", campaigns["campaign_key"].tolist(),
-                                format_func=lambda x: f"{x}: {campaigns[campaigns['campaign_key']==x]['campaign_name'].iloc[0]}")
+        # why: a dict lookup, not a DataFrame filter per option. format_func runs
+        # once per rendered option on every rerun, so filtering inside it made the
+        # widget quadratic in campaign count: ~500 options each scanning ~500 rows,
+        # repeated on every interaction, and a visitor can trigger reruns freely.
+        campaign_names = dict(zip(campaigns["campaign_key"], campaigns["campaign_name"]))
+        selected = st.selectbox("Select Campaign", list(campaign_names),
+                                format_func=lambda x: f"{x}: {campaign_names.get(x, '')}")
 
         camp_data = perf[perf["campaign_key"] == selected].sort_values("date_key")
         if not camp_data.empty:
@@ -201,7 +211,8 @@ with tab2:
                     "OVER_PACING": COLORS["amber"],
                 }.get(status, COLORS["amber"])
                 st.markdown(f'<div class="metric-card"><div class="metric-label">Status</div>'
-                            f'<div class="metric-value" style="color:{sc};font-size:1rem">{status}</div></div>', unsafe_allow_html=True)
+                            f'<div class="metric-value" style="color:{sc};font-size:1rem">'
+                            f'{html.escape(str(status))}</div></div>', unsafe_allow_html=True)
 
             st.markdown("---")
             # Pacing chart
@@ -292,7 +303,8 @@ with tab4:
         with col2:
             st.markdown(f'<div class="metric-card"><div class="metric-label">Concentration</div>'
                         f'<div class="metric-value" style="color:{hhi_color};font-size:1rem">'
-                        f'{hhi_status or "n/a"}</div></div>', unsafe_allow_html=True)
+                        f'{html.escape(str(hhi_status)) if hhi_status else "n/a"}</div></div>',
+                        unsafe_allow_html=True)
         with col3:
             st.markdown(f'<div class="metric-card"><div class="metric-label">Advertisers</div>'
                         f'<div class="metric-value">{advertiser_count}</div></div>', unsafe_allow_html=True)

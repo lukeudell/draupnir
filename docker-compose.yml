@@ -41,8 +41,14 @@ services:
     build: ./app
     container_name: draupnir_app
     restart: unless-stopped
+    # SECURITY: loopback by default, exactly like the db service above. Published
+    # as "8503:8503" this binds 0.0.0.0, so on a public host the app is reachable
+    # directly by IP and a reverse proxy in front of it becomes optional rather
+    # than mandatory: TLS, rate limiting and access control are all bypassed by
+    # anyone who knows the port. Behind a proxy, loopback is all that is needed.
+    # Override APP_EXPOSE_PORT only if you genuinely intend a public listener.
     ports:
-      - "8503:8503"
+      - "${APP_EXPOSE_PORT:-127.0.0.1:8503}:8503"
     environment:
       PORTFOLIO_DB_HOST: db
       PORTFOLIO_DB_PORT: 5432

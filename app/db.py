@@ -96,6 +96,12 @@ def fetch(name: str, connect=psycopg2.connect) -> pd.DataFrame | None:
             password=password,
             dbname=os.getenv("PORTFOLIO_DB_NAME", "draupnir"),
             connect_timeout=3,
+            # SECURITY: a server-side statement timeout, not just a connect one.
+            # Without it a slow or pathological query holds a connection open
+            # indefinitely, and a public demo is a place where anyone can ask for
+            # a page repeatedly. The cap is generous next to these queries, which
+            # run in milliseconds, so it only ever fires on something wrong.
+            options="-c statement_timeout=10000",
         )
     except psycopg2.Error:
         return None

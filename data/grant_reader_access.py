@@ -28,6 +28,7 @@ from pathlib import Path
 
 import psycopg2
 from dotenv import load_dotenv
+from psycopg2 import sql
 
 _env_path = Path(__file__).resolve().parent.parent / ".env"
 if _env_path.exists():  # local-dev convenience only; production injects env, no .env present
@@ -68,11 +69,20 @@ def main():
             print(f"  SKIP {schema} (does not exist)")
             continue
 
-        cur.execute(f"GRANT USAGE ON SCHEMA {schema} TO portfolio_reader")
-        cur.execute(f"GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO portfolio_reader")
+        # SECURITY: composed with sql.Identifier rather than an f-string. The
+        # schema names come from the module constant above so nothing here is
+        # injectable today, but a grant loop is exactly the code someone later
+        # makes configurable, and identifier quoting is not the thing to be
+        # relying on a constant for. Matches how load_ads_data.py builds DDL.
+        ident = sql.Identifier(schema)
+        cur.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO portfolio_reader").format(ident))
         cur.execute(
-            f"ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} "
-            f"GRANT SELECT ON TABLES TO portfolio_reader"
+            sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA {} TO portfolio_reader").format(ident)
+        )
+        cur.execute(
+            sql.SQL(
+                "ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT ON TABLES TO portfolio_reader"
+            ).format(ident)
         )
         # Count accessible tables
         cur.execute(
