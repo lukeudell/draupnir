@@ -1,0 +1,180 @@
+# ============================================================
+#  file:       .github/workflows/ci.yml
+#  purpose:    CI gates: app tests, full pipeline against real postgres, security scans
+#  owner:      Luke Udell
+#  spdx:       MIT
+#  std:        [STD-02] [STD-05]
+#  adr:        none
+#  ticket:     none
+#  ticket-url: none
+#  created:    2026-07-19
+# ============================================================
+name: CI
+
+# Runs on every push and PR. Three jobs, deliberately ordered by how fast they
+# fail: unit tests first, then the full pipeline against a real Postgres, then
+# the dependency and image scans.
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  app-tests:
+    name: App tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: pip install -r app/requirements.txt pytest
+      - name: Test
+        run: python -m pytest app/tests -q
+
+  pipeline:
+    name: Pipeline (generate, load, dbt build)
+    runs-on: ubuntu-latest
+    # why: this is the job worth having. It proves the whole chain against the
+    # same engine production uses: never SQLite, never a mock. If the generator,
+    # the loader and the models disagree, this is where it surfaces.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: draupnir_admin
+          POSTGRES_PASSWORD: ci_only_not_a_secret
+          POSTGRES_DB: draupnir
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U draupnir_admin -d draupnir"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      PORTFOLIO_DB_HOST: localhost
+      PORTFOLIO_DB_PORT: "5432"
+      PORTFOLIO_DB_USER: draupnir_admin
+      PORTFOLIO_DB_PASSWORD: ci_only_not_a_secret
+      PORTFOLIO_DB_NAME: draupnir
+      READER_DB_PASSWORD: ci_only_reader_not_a_secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install data dependencies
+        run: pip install -r data/requirements.txt pytest
+      - name: Generator property tests
+        # runs before the generator does, so a distribution regression fails
+        # here rather than surfacing as wrong numbers three layers downstream.
+        run: python -m pytest data/tests -q
+      - name: Generate and load
+        working-directory: data
+        # a reduced volume: CI is proving the chain works, not benchmarking it.
+        # the distributions are asserted by the generator's own spot-check output.
+        run: |
+          python generate_ads_data.py \
+            --subscribers 2000 --advertisers 20 --campaigns 50 \
+            --content 200 --requests 20000 --fill-rate 0.82
+          python load_ads_data.py \
+            --host "$PORTFOLIO_DB_HOST" --port "$PORTFOLIO_DB_PORT" \
+            --user "$PORTFOLIO_DB_USER" --password "$PORTFOLIO_DB_PASSWORD" \
+            --dbname "$PORTFOLIO_DB_NAME" \
+            --reader-password "$READER_DB_PASSWORD"
+      - name: Install dbt
+        run: pip install -r dbt/requirements.txt
+      - name: dbt build
+        working-directory: dbt
+        env:
+          DBT_HOST: localhost
+          DBT_PORT: "5432"
+          DBT_USER: draupnir_admin
+          DBT_PASSWORD: ci_only_not_a_secret
+          DBT_DBNAME: draupnir
+        # `build`, not `run`: build executes the models AND their tests. `run`
+        # skips tests entirely, which is how a declared test can sit in the repo
+        # for months without ever having passed.
+        run: |
+          cp profiles.docker.yml profiles.yml
+          dbt deps --profiles-dir .
+          dbt build --profiles-dir .
+      - name: SQL lint
+        working-directory: dbt
+        # the dbt templater compiles ref()/source() before linting, so the
+        # parser never sees raw jinja. Runs after build because the templater
+        # needs a working profile and an existing warehouse.
+        run: |
+          pip install "sqlfluff==3.4.2" "sqlfluff-templater-dbt==3.4.2"
+          sqlfluff lint models tests 2>&1 | tee lint.log
+          # sqlfluff SKIPS a file it cannot compile and still exits 0, so a
+          # clean run is not proof that anything was linted. Fail on any skip.
+          if grep -q "Skipped file" lint.log; then
+            echo "::error::sqlfluff skipped a file; it was not linted"
+            grep "Skipped file" lint.log
+            exit 1
+          fi
+      - name: dbt docs
+        working-directory: dbt
+        run: dbt docs generate --profiles-dir . --static
+      - name: Upload dbt docs
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-docs
+          path: dbt/target/static_index.html
+
+  security:
+    name: Dependency and image scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gitleaks scans the full history, not just the tip commit
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: bandit
+        # blocking at medium and above. Tests and generated data are excluded:
+        # assert statements in tests are not a finding.
+        run: |
+          pip install bandit
+          bandit -r app data -x ./app/tests,./data/tests,./data/generated -ll
+      - name: pip-audit
+        # blocking on purpose. Running a scanner with `|| true` means a green
+        # tick never meant "no known vulnerabilities", only that the scanner
+        # ran. If a finding needs accepting, accept it explicitly with
+        # --ignore-vuln and a reason, so the exception is visible in the diff
+        # rather than hidden in an exit code.
+        run: |
+          pip install pip-audit
+          # Ignores are today's accepted findings, each listed in SECURITY.md with a
+          # reason and an upgrade target. Anything NEW fails this job.
+          # app and data carry no accepted findings: they must be clean.
+          pip-audit -r app/requirements.txt
+          pip-audit -r data/requirements.txt
+          # dbt is the exception, and it is blocked upstream rather than neglected:
+          # dbt-core 1.9.4 constrains protobuf<6.0, which pins dbt-common and
+          # deepdiff to versions carrying these. Clearing them means moving dbt-core.
+          # Listed with reasons in SECURITY.md.
+          pip-audit -r dbt/requirements.txt --ignore-vuln PYSEC-2026-2440 --ignore-vuln PYSEC-2026-327 --ignore-vuln PYSEC-2026-2445
+      - name: Build images
+        run: |
+          docker build -t draupnir-app:ci app
+          docker build -t draupnir-data:ci data
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: draupnir-app:ci
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true

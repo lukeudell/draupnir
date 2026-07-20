@@ -1,0 +1,55 @@
+# Dependency updates. Weekly rather than daily: this is a portfolio, not a
+# product, and a PR every morning becomes noise you stop reading.
+#
+# Grouped by ecosystem so one PR covers a coherent set of bumps.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: pip
+    directory: "/app"
+    schedule:
+      interval: weekly
+    groups:
+      apppip:
+        patterns: ["*"]
+  - package-ecosystem: pip
+    directory: "/data"
+    schedule:
+      interval: weekly
+    groups:
+      datapip:
+        patterns: ["*"]
+  - package-ecosystem: pip
+    directory: "/dbt"
+    schedule:
+      interval: weekly
+    groups:
+      dbtpip:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: "/app"
+    schedule:
+      interval: weekly
+    groups:
+      appdocker:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: "/data"
+    schedule:
+      interval: weekly
+    groups:
+      datadocker:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: "/dbt"
+    schedule:
+      interval: weekly
+    groups:
+      dbtdocker:
+        patterns: ["*"]
