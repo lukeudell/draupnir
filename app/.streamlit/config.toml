@@ -1,0 +1,19 @@
+# Base chrome theme = the site-default TERMINAL palette (global.css). This is the
+# pre-paint baseline before the per-request colors arrive via the iframe URL and
+# are applied by theme.build_app_css(); keeping it terminal minimizes first-paint
+# flash. config.toml cannot vary per request, so the dynamic theming lives in CSS.
+[theme]
+primaryColor = "#00E5FF"
+backgroundColor = "#050505"
+secondaryBackgroundColor = "#121212"
+textColor = "#E8E8E8"
+font = "monospace"
+
+[server]
+# baseUrlPath is NOT set here on purpose. It is supplied by
+# STREAMLIT_SERVER_BASE_URL_PATH so the app can be mounted at the root when run
+# standalone, or under a prefix when it sits behind a reverse proxy. Hardcoding it
+# made the app only work in one deployment.
+headless = true
+enableCORS = false
+enableXsrfProtection = true
