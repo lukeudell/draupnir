@@ -1,5 +1,35 @@
 # Security
 
+## Threat model
+
+This project is published as source and also runs as a live, embedded demo on a
+public site. Two things follow from that, and they shape everything below.
+
+An untrusted visitor can interact with the dashboard. So the app takes no input
+that reaches SQL, renders nothing from the database without escaping it, holds a
+database role that can only SELECT, and carries a server-side statement timeout.
+
+Anyone can read the source. So there is nothing secret in it: no credential has
+a working default, and every secret arrives from the environment.
+
+The demo is meant to sit behind the host site's reverse proxy. Both published
+ports therefore bind loopback only. Exposing the app directly would make TLS,
+rate limiting and access control at the proxy optional rather than mandatory,
+which is the difference between a demo and an open port on a server you care
+about.
+
+## What the database role can actually do
+
+The app connects as `portfolio_reader`, which holds `USAGE` and `SELECT` and
+nothing else. Verified against a live database rather than assumed: `CREATE
+TABLE`, `DROP TABLE`, `UPDATE`, `DELETE`, `CREATE ROLE`, `ALTER ROLE ...
+SUPERUSER` and `COPY ... TO PROGRAM` are all refused. That last one is the
+usual route from SQL execution to shell on Postgres, and it needs a privilege
+this role does not have.
+
+Migrations, loading and dbt run as the owner role, which is a separate
+credential the app never receives.
+
 ## Dependency baseline
 
 Audited 2026-07-19 with `pip-audit`. Every `requirements.txt` here carries the
@@ -45,6 +75,24 @@ docker compose up -d --build app     # then open http://localhost:8503/
 
 Bump the pin, run that, and if it is green remove the matching `--ignore-vuln` from
 `.github/workflows/ci.yml` and the row above.
+
+## Staying current
+
+Pinned dependencies and a pinned base image mean this repo can drift from safe to
+vulnerable with no commit to trigger a scan. Three things cover that:
+
+- **CI runs on a weekly schedule** as well as on push, so `pip-audit`, `bandit`,
+  `gitleaks` and the Trivy image scans run against a quiet repo.
+- **Trivy scans every image in the deployed stack**, which means the app image
+  and `postgres:16`, not just the one this repo builds. A pinned base image is a
+  frozen set of system packages and the database half holds the data.
+- **Dependabot** proposes weekly upgrades for all three pip manifests, all three
+  Dockerfiles and the GitHub Actions, grouped per ecosystem.
+
+Three repository settings do the rest, and they are settings rather than files,
+so they need enabling once on GitHub: Dependabot alerts, Dependabot security
+updates, and secret scanning with push protection. Private vulnerability
+reporting is worth turning on at the same time.
 
 ## Reporting
 

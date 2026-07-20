@@ -19,6 +19,12 @@ on:
     branches: [main, master]
   pull_request:
   workflow_dispatch:
+  # why: a CVE is published against code that has not changed. Pinned
+  # dependencies and a pinned base image mean a quiet repo drifts from safe to
+  # vulnerable with no commit to trigger a scan, so the scans run on a clock as
+  # well as on a push. Monday morning, before the week's work.
+  schedule:
+    - cron: "0 7 * * 1"
 
 permissions:
   contents: read
@@ -171,10 +177,28 @@ jobs:
         run: |
           docker build -t draupnir-app:ci app
           docker build -t draupnir-data:ci data
-      - name: Trivy scan
+      - name: Trivy scan (app image)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: draupnir-app:ci
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+      - name: Trivy scan (postgres image)
+        # why: the deployed stack is the app and this database, and only the app
+        # was being scanned. A pinned base image is a frozen set of system
+        # packages; scanning the half that holds the data is not optional.
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: postgres:16
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+      - name: Trivy scan (data image)
+        # not deployed, but it is built here and it runs against the database
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: draupnir-data:ci
           severity: CRITICAL,HIGH
           exit-code: "1"
           ignore-unfixed: true
