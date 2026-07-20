@@ -1,0 +1,17 @@
+# Normalise line endings; Windows checkouts must not break Linux containers.
+* text=auto
+*.sh text eol=lf
+*.py text
+*.sql text
+*.yml text
+*.yaml text
+*.md text
+*.csv text
+
+# Binary, never line-ending converted: `* text=auto` guesses, and a guess that
+# goes wrong here produces a corrupt image rather than a noisy diff.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
