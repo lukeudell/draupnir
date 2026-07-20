@@ -1,0 +1,374 @@
+# ============================================================
+#  file:       dbt/models/analytics/schema.yml
+#  purpose:    analytics descriptions and declarative tests
+#  owner:      Luke Udell
+#  spdx:       MIT
+#  std:        [STD-04] [STD-14]
+#  adr:        none
+#  ticket:     none
+#  ticket-url: none
+#  created:    2026-07-19
+# ============================================================
+# Coverage note: this is the layer the app reads and the layer with the most
+# derived arithmetic, so every column carrying a division gets a bound, and
+# every model gets a grain test. Ratios whose denominator can legitimately be
+# zero are deliberately NOT marked not_null; see the per-column notes.
+version: 2
+
+models:
+  - name: mart_platform_health
+    description: "Daily platform-level KPIs: fill rate, eCPM, completion, viewability, revenue."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [date_key]
+    columns:
+      - name: date_key
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              to: ref('dim_date_ads')
+              field: date_key
+      - name: full_date
+        tests: [not_null]
+      - name: total_requests
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: total_impressions
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: fill_rate_pct
+        description: "Impressions as a percentage of requests. Null on a day with no requests."
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+      - name: ecpm_usd
+        description: >
+          Effective CPM: (revenue / impressions) * 1000. Null on a day with no
+          impressions, which is why this column carries a bound rather than
+          not_null: an undefined rate is correct, a negative one is not.
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: completion_rate_pct
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+      - name: viewability_rate_pct
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+      - name: total_revenue_usd
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: unique_subscribers
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: viewing_hours
+        description: "Content viewing hours on ad-supported tiers, the RPSH denominator."
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: revenue_per_subscriber_hour
+        description: >
+          RPSH: ad revenue per hour of ad-supported viewing. Balances
+          monetisation against experience, since it rises both when ads are
+          sold well and when viewers are shown too many. Null on a day with no
+          recorded viewing, which is undefined rather than zero, so it carries
+          a bound rather than not_null.
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+  - name: mart_campaign_performance
+    description: "Campaign performance with pacing analysis and advertiser metadata."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [campaign_key, date_key]
+    columns:
+      - name: campaign_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_campaigns')
+              field: campaign_key
+      - name: campaign_name
+        tests: [not_null]
+      - name: company_name
+        tests: [not_null]
+      - name: industry_vertical
+        tests: [not_null]
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date_ads')
+              field: date_key
+      - name: elapsed_days
+        description: "Day number within campaign flight (1-indexed)"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+              inclusive: true
+      - name: impressions
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: revenue_usd
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: cumulative_spend
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: total_budget_usd
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: flight_days
+        description: "Total days in campaign flight"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+              inclusive: true
+      - name: budget_pacing_ratio
+        description: >
+          Budget delivery: cumulative spend over the pro-rata share of budget
+          the elapsed flight has earned. 1.0 is exactly on pace. Carries the
+          same name as the fact column it comes from, so one metric has one
+          name end to end. Null when there is no budget or flight to divide by.
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: pacing_status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["ON_PACE", "UNDER_PACING", "OVER_PACING", "UNKNOWN"]
+      - name: frequency_cap
+        tests: [not_null]
+
+  - name: mart_advertiser_summary
+    description: "Per-advertiser aggregation: spend, eCPM, completion, revenue share."
+    columns:
+      - name: advertiser_key
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              to: ref('dim_advertisers')
+              field: advertiser_key
+      - name: company_name
+        tests: [not_null]
+      - name: industry_vertical
+        tests: [not_null]
+      - name: spend_tier
+        tests: [not_null]
+      - name: total_spend
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: total_impressions
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: ecpm
+        description: "eCPM for this advertiser. Null if the advertiser served no impressions."
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: completion_rate_pct
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+      - name: viewability_rate_pct
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+      - name: campaign_count
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+              inclusive: true
+      - name: revenue_share_pct
+        description: >
+          This advertiser's share of total platform revenue. The shares across
+          all advertisers must sum to 100; that invariant is asserted in
+          tests/assert_advertiser_revenue_share_sums_to_100.sql, because it is a
+          property of the set rather than of any single row.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+
+  - name: mart_content_monetization
+    description: "Revenue per content genre per day."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [genre, date_key]
+    columns:
+      - name: genre
+        tests: [not_null]
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date_ads')
+              field: date_key
+      - name: impressions
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: revenue_usd
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: avg_view_duration_sec
+        description: "Mean ad view duration. Bounded by the longest ad slot, 30 seconds."
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 30
+              inclusive: true
+
+  - name: mart_advertiser_concentration
+    description: >
+      Revenue concentration risk as a Herfindahl-Hirschman index over advertiser
+      revenue shares, with the antitrust thresholds it is borrowed from. One row
+      for the observation window.
+    columns:
+      - name: hhi
+        description: "Sum of squared advertiser revenue shares. 10000 = a monopoly."
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 10000
+              inclusive: true
+      - name: concentration_band
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["DIVERSIFIED", "MODERATE", "CONCENTRATED"]
+      - name: advertiser_count
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+              inclusive: true
+      - name: top_advertiser_share_pct
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+
+  - name: mart_frequency_analysis
+    description: "Ad frequency per subscriber per campaign with cap violation tracking."
+    columns:
+      - name: campaign_key
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              to: ref('dim_campaigns')
+              field: campaign_key
+      - name: campaign_name
+        tests: [not_null]
+      - name: frequency_cap
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+              inclusive: true
+      - name: total_subscribers
+        description: >
+          Distinct subscribers reached by this campaign. This is the column that
+          would need a k-anonymity floor before the model saw real subjects; the
+          data is synthetic, so the threshold is documented rather than enforced.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+              inclusive: true
+      - name: subscribers_exceeding_cap
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: total_violations
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: violation_rate_pct
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+      - name: avg_frequency
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
