@@ -38,6 +38,7 @@ sections:
 
   - slug: metrics
     title: The Metrics
+    nav_label: Metrics
     published: true
     body: |
       Eight metrics, each chosen because a stakeholder asks the question it answers.
@@ -83,6 +84,7 @@ sections:
 
   - slug: interactions
     title: Reading Metrics Against Each Other
+    nav_label: Interactions
     published: true
     body: |
       Listing metrics is the easy half. Reading them together is the analytics
@@ -101,6 +103,7 @@ sections:
 
   - slug: pipeline
     title: The Pipeline
+    nav_label: Pipeline
     published: true
     body: |
       Four stages: generate, load, transform, analyse.
@@ -124,3 +127,11 @@ sections:
       The presentation layer reads through a SELECT-only role. Postgres binds to
       loopback. No credentials are hardcoded, and the app refuses to start without
       its password in the environment.
+  - slug: monitor
+    title: Campaign Monitor
+    nav_label: Monitor
+    published: true
+    body: |
+      Live campaign pacing against the seeded warehouse: delivery, viewability and revenue per
+      campaign, read through this project's read-only role. The same marts the metrics prose
+      describes, queried interactively.
