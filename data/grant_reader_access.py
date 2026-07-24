@@ -11,7 +11,7 @@
 # ============================================================
 """
 Draupnir: post-dbt permission grant
-Grants portfolio_reader SELECT on all dbt-created schemas.
+Grants the reader role (READER_DB_USER) SELECT on all dbt-created schemas.
 
 Must be run AFTER dbt build completes, because dbt creates schemas with
 a 'public_' prefix (e.g. public_ads_mart) that do not exist until dbt
@@ -34,7 +34,7 @@ _env_path = Path(__file__).resolve().parent.parent / ".env"
 if _env_path.exists():  # local-dev convenience only; production injects env, no .env present
     load_dotenv(_env_path)
 
-# All schemas that portfolio_reader should have SELECT on
+# All schemas the reader role should have SELECT on
 DBT_SCHEMAS = [
     "public_ads_mart",
     "public_ads_analytics",
@@ -50,6 +50,9 @@ def main():
     parser.add_argument("--password", default=os.getenv("PORTFOLIO_DB_PASSWORD", ""))
     parser.add_argument("--dbname", default=os.getenv("PORTFOLIO_DB_NAME", "draupnir"))
     args = parser.parse_args()
+    # the platform provides demo_<slug>_ro and forbids role management here; standalone
+    # keeps the old name. Either way the role must already exist by this point
+    reader_role = os.getenv("READER_DB_USER", "portfolio_reader")
 
     conn = psycopg2.connect(
         host=args.host, port=args.port,
@@ -59,7 +62,7 @@ def main():
     conn.autocommit = True
     cur = conn.cursor()
 
-    print("Granting portfolio_reader access on dbt schemas...")
+    print(f"Granting {reader_role} access on dbt schemas...")
     for schema in DBT_SCHEMAS:
         # Check if schema exists
         cur.execute(
@@ -75,14 +78,13 @@ def main():
         # makes configurable, and identifier quoting is not the thing to be
         # relying on a constant for. Matches how load_ads_data.py builds DDL.
         ident = sql.Identifier(schema)
-        cur.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO portfolio_reader").format(ident))
+        cur.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(ident, sql.Identifier(reader_role)))
         cur.execute(
-            sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA {} TO portfolio_reader").format(ident)
+            sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA {} TO {}").format(ident, sql.Identifier(reader_role))
         )
         cur.execute(
             sql.SQL(
-                "ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT ON TABLES TO portfolio_reader"
-            ).format(ident)
+                "ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT ON TABLES TO {}").format(ident, sql.Identifier(reader_role))
         )
         # Count accessible tables
         cur.execute(

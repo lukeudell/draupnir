@@ -180,9 +180,13 @@ def load_csv(conn, table_name, csv_path):
     conn.commit()
 
 
-def ensure_reader_role(conn, reader_password: str):
+def ensure_reader_role(conn, reader_role: str, reader_password: str):
     """
-    Create the portfolio_reader login role if it is absent.
+    Create the reader login role if it is absent.
+
+    On the portfolio platform the role already exists (the connector provisions
+    demo_<slug>_ro and this account deliberately lacks CREATEROLE), so a
+    plugged-in project must never manage roles; standalone, first run creates it.
 
     This loader used to assume the role already existed, because something else
     happened to create it first. That made the dependency real but invisible:
@@ -195,26 +199,26 @@ def ensure_reader_role(conn, reader_password: str):
     tedious to unpick mid-load.
     """
     with conn.cursor() as cur:
-        cur.execute("SELECT 1 FROM pg_roles WHERE rolname = 'portfolio_reader'")
+        cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (reader_role,))
         if cur.fetchone():
-            print("  portfolio_reader already exists, leaving it alone")
+            print(f"  {reader_role} already exists, leaving it alone")
             return
         cur.execute(
-            sql.SQL("CREATE ROLE portfolio_reader WITH LOGIN PASSWORD {}").format(
-                sql.Literal(reader_password)
+            sql.SQL("CREATE ROLE {} WITH LOGIN PASSWORD {}").format(
+                sql.Identifier(reader_role), sql.Literal(reader_password)
             )
         )
         cur.execute(
-            sql.SQL("GRANT CONNECT ON DATABASE {} TO portfolio_reader").format(
-                sql.Identifier(conn.info.dbname)
+            sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+                sql.Identifier(conn.info.dbname), sql.Identifier(reader_role)
             )
         )
     conn.commit()
-    print("  Created portfolio_reader role")
+    print(f"  Created {reader_role} role")
 
 
-def grant_reader_access(conn):
-    """Grant portfolio_reader on both raw and dbt-created schemas.
+def grant_reader_access(conn, reader_role: str):
+    """Grant the reader role on both raw and dbt-created schemas.
     dbt prefixes with 'public_', so we grant on both naming conventions."""
     all_schemas = [
         "ads_staging",
@@ -227,16 +231,16 @@ def grant_reader_access(conn):
             cur.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(
                 sql.Identifier(schema)
             ))
-            cur.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO portfolio_reader").format(
-                sql.Identifier(schema)
+            cur.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+                sql.Identifier(schema), sql.Identifier(reader_role)
             ))
             cur.execute(sql.SQL(
-                "GRANT SELECT ON ALL TABLES IN SCHEMA {} TO portfolio_reader"
-            ).format(sql.Identifier(schema)))
+                "GRANT SELECT ON ALL TABLES IN SCHEMA {} TO {}"
+            ).format(sql.Identifier(schema), sql.Identifier(reader_role)))
             cur.execute(sql.SQL(
                 "ALTER DEFAULT PRIVILEGES IN SCHEMA {} "
-                "GRANT SELECT ON TABLES TO portfolio_reader"
-            ).format(sql.Identifier(schema)))
+                "GRANT SELECT ON TABLES TO {}"
+            ).format(sql.Identifier(schema), sql.Identifier(reader_role)))
     conn.commit()
     print("\n  Granted portfolio_reader access to all ads schemas (including public_ prefix)")
 
@@ -303,9 +307,10 @@ def main():
 
     verify_row_counts(conn)
 
-    print("\nGranting reader access...")
-    ensure_reader_role(conn, args.reader_password)
-    grant_reader_access(conn)
+    reader_role = os.getenv("READER_DB_USER", "portfolio_reader")
+    print(f"\nGranting reader access for {reader_role}...")
+    ensure_reader_role(conn, reader_role, args.reader_password)
+    grant_reader_access(conn, reader_role)
 
     conn.close()
     print("\nAds data load complete.")
