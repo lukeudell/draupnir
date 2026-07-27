@@ -1,7 +1,7 @@
 # Streamlit Campaign Pacing Monitor: pinned dependencies
 # Update policy: check monthly for CVEs, pin exact versions always.
-streamlit==1.54.0
-psycopg2-binary==2.9.10
-pandas==2.2.3
-numpy==2.2.3
-plotly==6.0.1
+streamlit==1.60.0
+psycopg2-binary==2.9.12
+pandas==3.0.5
+numpy==2.5.1
+plotly==6.9.0
